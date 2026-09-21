@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react'
-import { BackHandler, Keyboard } from 'react-native'
+import { BackHandler, Keyboard, Platform } from 'react-native'
 import { useClipboardWriter } from '../platform/clipboard'
 import { markdownTabSave } from './mobile-session-write-operations'
 import { triggerSuccess, triggerError } from '../platform/haptics'
@@ -94,6 +94,15 @@ export function useMobileSessionMarkdownActions(scope: MobileSessionDiffComments
   }, [getDirtyMarkdownDrafts, leaveSession])
 
   useEffect(() => {
+    // Native only, as the drawers and the file preview already are: react-native-web's
+    // `BackHandler.addEventListener` logs "BackHandler is not supported on web and should not be
+    // used." and hands back an inert subscription, and this effect re-registers whenever the
+    // dirty-draft list changes — two lines on the console at mount, measured. There is no hardware
+    // back to intercept in a WebView; the shell owns the phone's, and the page's own Back control
+    // is where the unsaved-draft prompt lives.
+    if (Platform.OS === 'web') {
+      return
+    }
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       requestLeaveSession()
       return true

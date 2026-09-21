@@ -60,7 +60,13 @@ export function useMobileSessionDiffComments(scope: MobileSessionDocumentReaders
   )
 
   useEffect(() => {
-    void loadDiffComments()
+    // Caught here rather than inside the loader, whose promise the golden recorder awaits. A
+    // refused read already returns above; a *rejected* one is the transport's, and the loader had
+    // no catch at all — inside the page that is an unhandled rejection on every mount against a
+    // host that will not answer `worktree.show`, measured in the render check. Notes that did not
+    // arrive leave the ones on screen as they were, which is this module's own policy for a
+    // refusal.
+    void loadDiffComments().catch(() => undefined)
   }, [loadDiffComments])
 
   const addDiffCommentForFile = useCallback(
