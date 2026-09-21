@@ -93,7 +93,8 @@ export async function waitForLoadedFrame(
     arm,
     sink,
     nonce,
-    readImageHits
+    readImageHits,
+    describeRequests
   }
 ) {
   const reading = async (what) =>
@@ -145,7 +146,7 @@ export async function waitForLoadedFrame(
     await untilAborted(
       pollHitsUntilAdmitted(readImageHits, signal),
       signal,
-      async () => await reading(await describeAdmittedImages(page, readImageHits))
+      async () => await reading(await describeAdmittedImages(page, readImageHits, describeRequests))
     )
   }
   return previewFrame(page)
@@ -182,7 +183,7 @@ async function pollHitsUntilAdmitted(readImageHits, signal) {
  * separates both from an element that never resolved a URL, and `loading` from one the browser
  * deferred. Without these a CI log says only that a count was 1.
  */
-async function describeAdmittedImages(page, readImageHits) {
+async function describeAdmittedImages(page, readImageHits, describeRequests) {
   const frame = previewFrame(page)
   const image = frame
     ? await Promise.race([
@@ -203,7 +204,10 @@ async function describeAdmittedImages(page, readImageHits) {
       ])
     : null
   const reading = image === false ? 'the reading never answered' : image
-  return `the arm recorded ${JSON.stringify(readImageHits())} of ${JSON.stringify(ADMITTED_IMAGE_PATHS)}; #remote ${JSON.stringify(reading)}`
+  // What the browser said about the requests themselves, which is where a request that never
+  // reached the rig's route handler is distinguishable from one the page never made.
+  const requests = describeRequests?.() ?? 'no request log for this arm'
+  return `the arm recorded ${JSON.stringify(readImageHits())} of ${JSON.stringify(ADMITTED_IMAGE_PATHS)}; #remote ${JSON.stringify(reading)}; ${requests}`
 }
 
 /**
