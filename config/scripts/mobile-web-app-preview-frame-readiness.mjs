@@ -206,7 +206,7 @@ async function describeAdmittedImages(page, readImageHits, describeRequests) {
   const reading = image === false ? 'the reading never answered' : image
   // What the browser said about the requests themselves, which is where a request that never
   // reached the rig's route handler is distinguishable from one the page never made.
-  const requests = describeRequests?.() ?? 'no request log for this arm'
+  const requests = (await describeRequests?.(frame)) ?? 'no request log for this arm'
   return `the arm recorded ${JSON.stringify(readImageHits())} of ${JSON.stringify(ADMITTED_IMAGE_PATHS)}; #remote ${JSON.stringify(reading)}; ${requests}`
 }
 
@@ -288,9 +288,14 @@ export async function waitForRecordedNavigation(
     }
     if (Date.now() - since > sampleEveryMs) {
       since = Date.now()
-      latest = await describePreviewFrame(page, reading?.frame, reading?.browserVersion).catch(
-        (error) => `the reading itself failed: ${String(error).split('\n')[0]}`
-      )
+      latest = await describePreviewFrame(page, reading?.frame, reading?.browserVersion)
+        .then(async (frameReading) => {
+          // The same evidence the images arm prints. A navigation arm that produced nothing is
+          // asking the same question of the same frame, and on CI this one fails on its own.
+          const evidence = await reading?.describeRequests?.(reading?.frame)
+          return evidence ? `${frameReading} | ${evidence}` : frameReading
+        })
+        .catch((error) => `the reading itself failed: ${String(error).split('\n')[0]}`)
     }
     await page.waitForTimeout(10)
   }

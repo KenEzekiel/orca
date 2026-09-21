@@ -34,6 +34,7 @@ import {
 } from './mobile-web-app-render-harness.mjs'
 import { createCspReportSink, reportedDirectives } from './mobile-web-app-preview-csp-reports.mjs'
 import { recordRequestsTo } from './mobile-web-app-preview-request-log.mjs'
+import { watchImageEvidence } from './mobile-web-app-preview-image-evidence.mjs'
 import {
   ARTIFACT_RGB,
   ENTRY_SOURCE,
@@ -246,7 +247,10 @@ async function open(
   const page = await context.newPage()
   // Subscribed before the first navigation, so a request made during load is in the log. Cheap
   // while an arm passes: it fills arrays, and only an abort asks them to speak.
-  const describeRequests = await recordRequestsTo(page, SECURE_ORIGIN)
+  const requestLog = await recordRequestsTo(page, SECURE_ORIGIN)
+  // Asked only when an arm has aborted, so the fresh-image probe and its wait cost a failing run
+  // and never a passing one.
+  const describeRequests = watchImageEvidence(page, SECURE_ORIGIN, requestLog)
   try {
     const navigations = []
     const popups = []
@@ -371,7 +375,8 @@ async function open(
     await settleAfterMount(page, navigations, expectNavigation, signal, {
       frame: artifactFrame,
       browserVersion,
-      arm
+      arm,
+      describeRequests
     })
     const result = {
       page,

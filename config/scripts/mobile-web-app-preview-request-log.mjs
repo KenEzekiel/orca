@@ -22,6 +22,8 @@ export async function recordRequestsTo(page, originPrefix) {
   // Only this origin's ids, because `Network.loadingFailed` carries a request id and no URL, and an
   // unfiltered list would report every other request on the page as this arm's evidence.
   const ours = new Set()
+  /** Every child target this session attached to, which says whether the frame is out of process. */
+  const attached = []
 
   page.on('request', (request) => {
     if (request.url().startsWith(originPrefix)) {
@@ -40,6 +42,21 @@ export async function recordRequestsTo(page, originPrefix) {
     .catch(() => null)
   if (cdp) {
     await cdp.send('Network.enable').catch(() => {})
+    // Chromium isolates sandboxed iframes into their own process, srcdoc included, so the page's own
+    // session sees none of the frame's requests: `cdp sent` came back empty on CI even for a request
+    // Playwright did record. Flattened auto-attach puts each child target on this same connection,
+    // and `Network.enable` on the child is what makes its requests visible here.
+    cdp.on('Target.attachedToTarget', (event) => {
+      attached.push({ type: event.targetInfo?.type ?? null, url: event.targetInfo?.url ?? null })
+      cdp.send('Network.enable', {}, event.sessionId).catch(() => {})
+    })
+    await cdp
+      .send('Target.setAutoAttach', {
+        autoAttach: true,
+        waitForDebuggerOnStart: false,
+        flatten: true
+      })
+      .catch(() => {})
     cdp.on('Network.requestWillBeSent', (event) => {
       if (!event.request?.url?.startsWith(originPrefix)) {
         return
@@ -65,6 +82,9 @@ export async function recordRequestsTo(page, originPrefix) {
     })
   }
 
-  return () =>
-    `asked ${JSON.stringify(asked)}; failed ${JSON.stringify(failed)}; cdp ${cdp ? 'on' : 'off'} sent ${JSON.stringify(sent)}; cdp loadingFailed ${JSON.stringify(loadingFailed)}`
+  return {
+    asked: () => [...asked],
+    describe: () =>
+      `asked ${JSON.stringify(asked)}; failed ${JSON.stringify(failed)}; cdp ${cdp ? 'on' : 'off'} attached ${JSON.stringify(attached)} sent ${JSON.stringify(sent)}; cdp loadingFailed ${JSON.stringify(loadingFailed)}`
+  }
 }
