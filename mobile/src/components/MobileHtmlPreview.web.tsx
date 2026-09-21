@@ -36,10 +36,14 @@ export const MOBILE_HTML_PREVIEW_SANDBOX = 'allow-top-navigation-by-user-activat
  *
  * What the inherited policy then governs is everything the artifact tries to fetch: `img-src` bounds
  * its images, `font-src 'none'` refuses a web font, `connect-src 'self'` its XHR, and
- * `script-src 'self'` refuses its inline script even if the sandbox had allowed scripts. The native
- * preview is a separate WebView process with no policy on its document, so it does load a remote
- * image and does run a script; the page is deliberately stricter, because it has no second process
- * to contain either.
+ * `script-src 'self'` refuses its inline script even if the sandbox had allowed scripts.
+ *
+ * Only the script half of that is stricter than native. Since `img-src` gained `https:` the frame
+ * loads a remote image exactly as the native preview does, and an image URL is a channel: it fires
+ * on view and carries whatever the artifact's author encoded in it, so a rendered artifact can tell
+ * its own author it was opened. Nothing dynamic goes with it -- no script runs, so the URL is fixed
+ * when the artifact is written -- and `referrerPolicy` below keeps the document's own origin, which
+ * is the session id, out of the request.
  */
 export function MobileHtmlPreview({ html, renderSource }: MobileHtmlPreviewProps) {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
