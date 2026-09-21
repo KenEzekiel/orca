@@ -13,7 +13,8 @@ class MobileWebShellCspTest {
     assertTrue(directives.contains("script-src 'self'"))
     // React Native Web injects runtime styles with no nonce; see MobileWebShellCsp.
     assertTrue(directives.contains("style-src 'self' 'unsafe-inline'"))
-    // A file preview is a `data:` URI and markdown carries remote images; see MobileWebShellCsp.
+    // A file preview is a `data:` URI; `https:` is the favicon, project icon and avatar the
+    // page already renders, and the sealed preview frame. See MobileWebShellCsp.
     assertTrue(directives.contains("img-src 'self' data: https:"))
     // The bootstrap page reads ./manifest.json from its own origin, which is one read-only
     // directory behind the manifest map, so 'self' reaches nothing it cannot already read.
