@@ -232,9 +232,6 @@ export function PRFilesCombinedDiffViewer({
       return
     }
     if (sections.length === 0) {
-      if (entries.length === 0) {
-        onJumpHandled?.()
-      }
       return
     }
     const key = getPRFileSectionKey(pendingJumpPath)
@@ -249,7 +246,7 @@ export function PRFilesCombinedDiffViewer({
     }
     virtualizer.scrollToIndex(index, { align: 'start' })
     onJumpHandled?.()
-  }, [pendingJumpPath, sections.length, entries.length, sectionIndexByKey, sectionsRef, toggleSection, virtualizer, onJumpHandled])
+  }, [pendingJumpPath, sections.length, sectionIndexByKey, sectionsRef, toggleSection, virtualizer, onJumpHandled])
 
   usePRFilesDiffViewPersistence({
     sections,
