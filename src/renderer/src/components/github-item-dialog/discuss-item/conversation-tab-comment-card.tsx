@@ -222,7 +222,6 @@ export function ConversationTabCommentCard({
   return renderCommentCard(comment, isReply, {
     ...rest,
     handleReply: onReply,
-    onJumpToFile,
     setReplyingTo: (next) => {
       if (typeof next === 'function') {
         onToggleReply(comment.id)
