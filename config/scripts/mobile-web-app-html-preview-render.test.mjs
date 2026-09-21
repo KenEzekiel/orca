@@ -108,22 +108,40 @@ const foreignHits = []
 let foreign = null
 
 /**
+ * A TLS origin for the arm that measures what `img-src https:` admits, answered by Playwright's
+ * route interception rather than by a server: the directive matches on scheme, so what this needs
+ * is an `https://` URL and not a certificate. The host is `.invalid` on purpose -- it can never
+ * resolve, so a request that got as far as DNS would mean the route missed rather than that the
+ * policy allowed it.
+ */
+const SECURE_ORIGIN = 'https://artifact-images.invalid'
+const secureHits = []
+
+/** A 1x1 PNG, the smallest body that lets an admitted image request finish rather than error. */
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
+  'base64'
+)
+
+/**
  * One artifact, with every escape route a hostile one would try.
  *
  * `extra.head` and `extra.body` let a case add a `<meta refresh>` or a script without a second
  * fixture, so the thing under test is the only difference between the arms.
  */
-function artifact(extra = {}, nonce = 'n0') {
+function artifact(extra = {}, nonce = 'n0', assets = foreignOrigin) {
   // Every foreign URL carries this arm's nonce, because a closed page's requests can still land and
   // a hit list shared across arms would report the previous one's fetches as this one's.
   const tag = `?n=${nonce}`
+  // Subresources move to `assets` and the links do not: a case about what the policy fetches should
+  // not also change which origin a tapped link navigates to.
   return `<!doctype html><html><head><title>ARTIFACT</title>
 <style>html,body{margin:0;height:100%;background:rgb(${ARTIFACT_RGB})}
-#bg{background-image:url("${foreignOrigin}/css-bg.png${tag}")}
-@font-face{font-family:probe;src:url("${foreignOrigin}/probe.woff2${tag}")}
+#bg{background-image:url("${assets}/css-bg.png${tag}")}
+@font-face{font-family:probe;src:url("${assets}/probe.woff2${tag}")}
 #fonted{font-family:probe}</style>${extra.head ?? ''}</head><body>
 <h1 id="marker">ARTIFACT_RENDERED</h1><div id="bg">b</div><div id="fonted">f</div>
-<img id="remote" src="${foreignOrigin}/img.png${tag}" />
+<img id="remote" src="${assets}/img.png${tag}" />
 <a id="toplink" href="${foreignOrigin}/tapped.html${tag}" target="_top">tap</a>
 <a id="blanklink" href="${foreignOrigin}/blank.html${tag}" target="_blank">window</a>
 <a id="rootlink" href="/" target="_top">root</a>
@@ -268,6 +286,7 @@ async function open(
     act,
     expectNavigation = null,
     frameReady = 'artifact',
+    assets,
     signal
   } = {}
 ) {
@@ -305,6 +324,16 @@ async function open(
     return void route.continue()
   }
   await page.route(`${foreignOrigin}/**`, record)
+  // Answered here rather than by a server, and recorded on the way through. A request only reaches
+  // this handler if the policy let it out, which is the whole reading: the font never arrives.
+  await page.route(`${SECURE_ORIGIN}/**`, (route) => {
+    const url = route.request().url()
+    secureHits.push(url)
+    if (url.includes('.png')) {
+      return void route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1X1 })
+    }
+    return void route.fulfill({ status: 200, contentType: 'font/woff2', body: Buffer.alloc(0) })
+  })
   // The shell page's violations, and only those: an artifact's own listener would have to run, and
   // the fence under test is that nothing in the artifact runs.
   await page.addInitScript(() => {
@@ -324,7 +353,7 @@ async function open(
   // `sandbox` undefined is the product's own token, which is what every non-control case runs.
   await page.evaluate(
     ([html, override]) => window.__mount(html, override),
-    [artifact(extra, nonce), sandbox ?? null]
+    [artifact(extra, nonce, assets ?? foreignOrigin), sandbox ?? null]
   )
   // Named in every diagnostic, because the log shows the case and not which of its arms spoke.
   const arm = `arm csp=${csp} sandbox=${sandbox ?? 'product'} frameReady=${frameReady} nonce=${nonce}`
@@ -419,6 +448,11 @@ async function open(
     foreignHits: foreignHits
       .filter((one) => one.includes(`n=${nonce}`))
       .map((one) => one.split('?')[0]),
+    // Same shape as `foreignHits` and read the same way: this arm's requests only, by nonce, as
+    // paths. Absolute URLs go in, so the origin is stripped along with the query.
+    secureHits: secureHits
+      .filter((one) => one.includes(`n=${nonce}`))
+      .map((one) => one.split('?')[0].slice(SECURE_ORIGIN.length)),
     violations: await page.evaluate(() => window.__violations),
     body: await page.evaluate(() => document.body.innerText)
   }
@@ -514,19 +548,31 @@ for (const engine of ['chromium', 'webkit']) {
         expect(sealed.inside?.violations).toEqual([])
       }, 180_000)
 
-      it('fetches nothing of the artifact that leaves the origin, and would if allowed', async (ctx) => {
+      it('refuses the artifact cleartext subresources by scheme and its font by directive', async (ctx) => {
         const sealed = await open(browser(), { signal: ctx.signal })
         expect(sealed.pixel).toBe(ARTIFACT_RGB)
         expect(sealed.foreignHits).toEqual([])
-        // The control: with no policy the same three subresources are fetched, so the empty list
-        // above is the inherited `img-src` and `font-src` and not an artifact that never parsed.
-        // `img-src` admits `https:`, so what refuses `/img.png` is this origin being cleartext
-        // `http:`; a frame's remote image over TLS is allowed, and the fence here is the scheme.
+        // Two fences, not one, and the case name says which is which: this origin is cleartext
+        // `http:`, so `img-src 'self' data: https:` refuses both images on the scheme alone, and
+        // `font-src 'none'` refuses the font whatever its scheme. The https arm below is the other
+        // half -- remove it and an empty list here reads as "no remote subresource ever loads",
+        // which stopped being true when the directive gained `https:`.
         const control = await open(browser(), { csp: null, signal: ctx.signal })
         expect(control.pixel).toBe(ARTIFACT_RGB)
         expect(control.foreignHits).toEqual(
           expect.arrayContaining(['/img.png', '/css-bg.png', '/probe.woff2'])
         )
+      }, 120_000)
+
+      it('loads the artifact https images the directive admits, and still refuses its font', async (ctx) => {
+        const read = await open(browser(), { assets: SECURE_ORIGIN, signal: ctx.signal })
+        expect(read.pixel).toBe(ARTIFACT_RGB)
+        // Both images, because `img-src` governs a CSS background as well as an `<img>` element,
+        // and a case that only watched the element would miss half of what the directive opened.
+        expect([...read.secureHits].sort()).toEqual(['/css-bg.png', '/img.png'])
+        // The directive that did not move, measured on the same origin in the same arm: `https:`
+        // reached `img-src` and nothing else, so the font is refused where the images are not.
+        expect(read.secureHits).not.toContain('/probe.woff2')
       }, 120_000)
 
       it('asks to navigate the top frame to the shell itself, which the shell must refuse', async (ctx) => {
