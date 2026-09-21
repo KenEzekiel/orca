@@ -96,5 +96,48 @@ export const MOBILE_WEB_PAGE_ROUTES = [
   {
     pathname: '/h/[hostId]/review/[worktreeId]',
     grants: ['navigate', 'storage', 'externalLink', 'haptics', 'native.clipboard.write']
+  },
+  // The session screen: terminal and chat. Ten grants, every one of them read off a call site in
+  // this route's own closure rather than carried from the design, and it is the only route that
+  // asks for the media verbs or the screencast lane.
+  //
+  // `navigate` for the Back that pops the native stack and for the seven handoff sites its panels
+  // push from; `storage` for the ten exact keys and two workspace-scoped ones its screens read,
+  // which is what `page-storage-keys.ts` now lists; `externalLink` for the six openers it reaches —
+  // a terminal link tap whose open mode is the phone's browser, the Markdown and file readers, and
+  // the PR segment it docks; `haptics` for twenty-four trigger sites, which is the most of any
+  // route. `native.clipboard.write` has six call sites (the quick-command row, the sheets, the diff
+  // note, the Markdown actions, the accessory selection, the PR conflict list) and
+  // `native.clipboard.read` three (the accessory selection, the terminal's paste, the attachment
+  // probe): this screen is the heaviest clipboard user in the app and the first route to need the
+  // read as well as the write.
+  //
+  // The three media verbs are one seam, `useMediaPicker`, reached from the image attachment and the
+  // chat's image upload. They are declared together because `canPickMedia` is
+  // `pick && read && release` — a picked image is a handle, then chunks, so a route holding fewer
+  // than all three can start a pick it cannot finish.
+  //
+  // `screencastBinary` is C6's, and this is the route C6 ruling 3 deferred it to: the browser pane
+  // is mounted by `MobileSessionActiveContent`, and `use-browser-binary-screencast-grant.web.ts`
+  // asks the shell through the grants `init` carried. Without it the pane subscribes without
+  // `wantsBinary` against a shell that would have encoded the frames.
+  //
+  // Dictation is not here. The vendored `ExpoTwoWayAudioModule.web.ts` answers permission denied,
+  // so the page degrades to the error the screen already has (ruling 4); the verbs that would
+  // replace it are C7.10's PR D and are not on main at this commit.
+  {
+    pathname: '/h/[hostId]/session/[worktreeId]',
+    grants: [
+      'navigate',
+      'storage',
+      'externalLink',
+      'haptics',
+      'screencastBinary',
+      'native.clipboard.write',
+      'native.clipboard.read',
+      'native.media.pick',
+      'native.media.read',
+      'native.media.release'
+    ]
   }
 ]

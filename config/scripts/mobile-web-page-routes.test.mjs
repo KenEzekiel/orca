@@ -70,6 +70,21 @@ const EXPECTED_PAGE_ROUTES = [
   {
     pathname: '/h/[hostId]/review/[worktreeId]',
     grants: ['navigate', 'storage', 'externalLink', 'haptics', 'native.clipboard.write']
+  },
+  {
+    pathname: '/h/[hostId]/session/[worktreeId]',
+    grants: [
+      'navigate',
+      'storage',
+      'externalLink',
+      'haptics',
+      'screencastBinary',
+      'native.clipboard.write',
+      'native.clipboard.read',
+      'native.media.pick',
+      'native.media.read',
+      'native.media.release'
+    ]
   }
 ]
 

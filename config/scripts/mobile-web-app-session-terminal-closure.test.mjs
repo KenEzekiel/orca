@@ -164,8 +164,21 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * The module list on the merge, recorded at the base in the docstring above, which is where every
  * part of it is accounted for: the document's own modules replacing the factory that carried them,
  * mermaid's three, and the three bridge modules #21908 and C2.9 pin on main.
+ *
+ * C7.7 moves it by one, measured at both ends on this tree rather than summed: 4,328 at
+ * origin/main `23207bfde2` and 4,329 here, with local modules 978 -> 979. The +1 is the route body
+ * becoming a component — the walk now enters through `app/h/[hostId]/session/[worktreeId].web.tsx`
+ * instead of the native file and reaches `src/session/MobileSessionRouteScreen.tsx` under it, so
+ * the route file is one input either way and the component is the one that is new. Both are read
+ * out of the list below by name rather than inferred from the total.
  */
-const SESSION_ROUTE_MODULES = 4328
+const SESSION_ROUTE_MODULES = 4329
+
+/** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
+const ROUTE_ENTRY = [
+  'app/h/[hostId]/session/[worktreeId].web.tsx',
+  'src/session/MobileSessionRouteScreen.tsx'
+]
 
 const artifactModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PAGE_ENGINE))
 const packageModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PACKAGE))
@@ -201,6 +214,18 @@ describeClosure(
       // document twice, once as modules and once as a string.
       expect(documentModules).not.toContain('src/terminal/document/native-document-entry.ts')
       expect(local).not.toContain('src/terminal/terminal-webview-document-script.generated.ts')
+    }, 300_000)
+
+    it('enters through the web sibling and the route body, not the switch', async () => {
+      const { local } = await mobileWebAppRouteClosure(SESSION_ROUTE)
+      for (const entry of ROUTE_ENTRY) {
+        expect(local, `${entry} is not in the closure`).toContain(entry)
+      }
+      // The switch itself is what the shell renders natively, and it reaches
+      // `MobileWebShellScreen`, whose module calls `requireNativeViewManager` at import. A closure
+      // that carried it would be a bundle that throws when the manifest imports this route.
+      expect(local).not.toContain('app/h/[hostId]/session/[worktreeId].tsx')
+      expect(local).not.toContain('src/mobile-web-shell/MobileWebShellScreen.tsx')
     }, 300_000)
 
     it('reaches the engine as one deferred module and never as part of the download', async () => {
