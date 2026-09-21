@@ -26,15 +26,13 @@ import { describePreviewFrame, untilAborted } from './mobile-web-app-preview-fra
  * one. `'script'` waits for what the inline script writes: the marker element exists from parse
  * time, so an arm whose oracle is "the script ran" would otherwise read `window.__ran` before it
  * had. `'refusal'` waits for the frame's own `script-src` violation, which is queued and can land
- * after `load`. `'load'` is for the one arm whose artifact deliberately navigates the frame
- * somewhere else, where no marker is ever coming.
+ * after `load`. `'images'` waits for the two admitted image requests to have been recorded, for the
+ * arms whose claim is that they were. `'load'` is for the one arm whose artifact deliberately
+ * navigates the frame somewhere else, where no marker is ever coming.
  */
 export async function waitForLoadedFrame(
   page,
-  frameReady = 'artifact',
-  signal,
-  browserVersion,
-  arm
+  { frameReady = 'artifact', signal, browserVersion, arm, readImageHits }
 ) {
   const element = await page.waitForSelector('iframe', { timeout: 0 })
   const frame = await element.contentFrame()
@@ -76,7 +74,71 @@ export async function waitForLoadedFrame(
         `the artifact never parsed inside the frame: ${arm} | ${await describePreviewFrame(page, frame, browserVersion)}`
     )
   }
+  // After the marker, because an image is requested by a document that has parsed.
+  if (frameReady === 'images') {
+    await untilAborted(
+      untilImagesRecorded(page, readImageHits),
+      signal,
+      async () => await describeAdmittedImages(page, frame, readImageHits, browserVersion, arm)
+    )
+  }
   return frame
+}
+
+/** The two the policy admits; the font beside them is the absence these two presences hold up. */
+const ADMITTED_IMAGE_PATHS = ['/css-bg.png', '/img.png']
+
+/**
+ * Both admitted image requests, once the rig has recorded them.
+ *
+ * Polled in Node because that is where the route handler records; the arm hands its own reader in,
+ * so this module keeps no arm's state. Never rejects: once the case is over the page goes, and a
+ * rejection raised then has nobody left to catch it.
+ *
+ * Why a wait rather than the bounded settle the arms used to take. "Two frames and 200 ms" is an
+ * absence-shaped read, and these arms claim a presence. The runner's Chrome 152 had recorded the
+ * CSS background and not the `<img>` when that clock expired -- a request that was slow, which the
+ * count alone cannot tell from one the policy refused.
+ */
+async function untilImagesRecorded(page, readImageHits) {
+  const missing = () => ADMITTED_IMAGE_PATHS.filter((one) => !readImageHits().includes(one))
+  while (missing().length > 0) {
+    const stillPolling = await page.waitForTimeout(10).then(
+      () => true,
+      () => false
+    )
+    if (!stillPolling) {
+      return
+    }
+  }
+}
+
+/**
+ * Why the images are not both there yet, read from the element the browser would have fetched for.
+ *
+ * `complete` with a zero `naturalWidth` is a request that finished and produced no image, which is
+ * what a refusal looks like from the element; `complete` false is one still in flight. `currentSrc`
+ * separates both from an element the document never resolved a URL for, and `loading` from one the
+ * browser deferred on purpose. Without these a CI log says only that a count was 1.
+ */
+async function describeAdmittedImages(page, frame, readImageHits, browserVersion, arm) {
+  const image = frame
+    ? await frame
+        .evaluate(() => {
+          const element = document.getElementById('remote')
+          return element
+            ? {
+                complete: element.complete,
+                naturalWidth: element.naturalWidth,
+                currentSrc: element.currentSrc,
+                loading: element.getAttribute('loading')
+              }
+            : null
+        })
+        .catch((error) => `the reading itself failed: ${String(error).split('\n')[0]}`)
+    : null
+  const frameReading = await describePreviewFrame(page, frame, browserVersion)
+  return `the arm recorded ${JSON.stringify(readImageHits())} of ${JSON.stringify(ADMITTED_IMAGE_PATHS)}; #remote ${JSON.stringify(image)}: ${arm} | ${frameReading}`
 }
 
 /**

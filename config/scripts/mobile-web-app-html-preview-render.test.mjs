@@ -387,7 +387,19 @@ async function open(
   )
   // Named in every diagnostic, because the log shows the case and not which of its arms spoke.
   const arm = `arm csp=${csp} sandbox=${sandbox ?? 'product'} frameReady=${frameReady} nonce=${nonce}`
-  const artifactFrame = await waitForLoadedFrame(page, frameReady, signal, browserVersion, arm)
+  // One reader for the wait and for the reading: an arm that waits on one list and asserts on
+  // another proves nothing about the list it asserts on.
+  const readImageHits = () =>
+    secureHits
+      .filter((one) => one.includes(`n=${nonce}`))
+      .map((one) => one.split('?')[0].slice(SECURE_ORIGIN.length))
+  const artifactFrame = await waitForLoadedFrame(page, {
+    frameReady,
+    signal,
+    browserVersion,
+    arm,
+    readImageHits
+  })
   const frames = () => page.frames().filter((frame) => frame !== page.mainFrame())
   // Sampled before the action as well as after: a case that taps a link is asking what the tap
   // produced, and by then the top frame is mid-navigation and the iframe has blanked to its own
@@ -480,9 +492,7 @@ async function open(
       .map((one) => one.split('?')[0]),
     // Same shape as `foreignHits` and read the same way: this arm's requests only, by nonce, as
     // paths. Absolute URLs go in, so the origin is stripped along with the query.
-    secureHits: secureHits
-      .filter((one) => one.includes(`n=${nonce}`))
-      .map((one) => one.split('?')[0].slice(SECURE_ORIGIN.length)),
+    secureHits: readImageHits(),
     // What each admitted request carried, this arm's only, so an absence is this artifact's.
     secureReferers: secureReferers
       .filter((one) => one.url.includes(`n=${nonce}`))
@@ -599,7 +609,14 @@ for (const engine of ['chromium', 'webkit']) {
       }, 120_000)
 
       it('loads the artifact https images the directive admits, and still refuses its font', async (ctx) => {
-        const read = await open(browser(), { assets: SECURE_ORIGIN, signal: ctx.signal })
+        // Waited for, not hoped for: `frameReady: 'images'` is what makes the presence below a read
+        // after the requests rather than after a clock. CI's Chrome 152 had recorded the background
+        // and not the element when the old bounded settle expired.
+        const read = await open(browser(), {
+          assets: SECURE_ORIGIN,
+          frameReady: 'images',
+          signal: ctx.signal
+        })
         expect(read.pixel).toBe(ARTIFACT_RGB)
         // Both images, because `img-src` governs a CSS background as well as an `<img>` element,
         // and a case that only watched the element would miss half of what the directive opened.
@@ -610,7 +627,11 @@ for (const engine of ['chromium', 'webkit']) {
       }, 120_000)
 
       it('sends no referrer with an admitted https image, which is the shell header doing it', async (ctx) => {
-        const sealed = await open(browser(), { assets: SECURE_ORIGIN, signal: ctx.signal })
+        const sealed = await open(browser(), {
+          assets: SECURE_ORIGIN,
+          frameReady: 'images',
+          signal: ctx.signal
+        })
         // The presence precondition for the absence below: two requests were admitted and read, so
         // an empty referrer list is what they carried rather than a list of nothing.
         expect(sealed.secureHits.length).toBe(2)
@@ -625,6 +646,7 @@ for (const engine of ['chromium', 'webkit']) {
         const leaky = await open(browser(), {
           assets: SECURE_ORIGIN,
           csp: 'leaky',
+          frameReady: 'images',
           signal: ctx.signal
         })
         expect(leaky.secureHits.length).toBe(2)
