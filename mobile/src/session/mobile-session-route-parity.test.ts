@@ -97,7 +97,7 @@ const HEAD_CALLBACK_BODY_SHA256 = '5845c3b85217a3af9d3d2bfafe564a2b29a1b2c6776b5
 // refusal the timer site passed when it had no reply at all. Refreshed once more for the
 // last-visited-worktree effect, whose bare store write became the one writer of that key, so the
 // hybrid shell's page mirror sees it as it is written rather than one `init` later.
-const HEAD_EFFECT_SHA256 = 'dfce9d5cb921c734bd44801283aa579ee61ab69acbbf69ac1e769de24fd829ce'
+const HEAD_EFFECT_SHA256 = 'cc25f3707d52d278ad65d0bb452fc5ddf5c94bba5ed850e17ac0568d65ebe522'
 const HEAD_CONTENT_HOOK_SHA256 = '9c3b612fef3f370d66873aefdbe1d701f20cb64ded31fef5cc45fde6f8189581'
 // Same pin for the 12 bodies that sit in nested functions rather than callbacks, moved by the same
 // rewrite of those send and read expressions. Count unchanged. Refreshed again in step 6 for
@@ -122,9 +122,14 @@ const HEAD_TIMER_CLEANUP_SHA256 = 'c73f1d1c2cc89642f3d727d6f3b6b81860a9d6f342345
 // now shows: "Couldn't copy path" when the sheets moved onto the clipboard seam, taking the count
 // from 532 to 533, and "Couldn't copy" when the Markdown copy action gained the failure branch the
 // other copy paths already had, taking it to 534.
+//
+// Two more across C7.7, 534 -> 536, and the same two move the effect and host-JSX hashes beside
+// them: `'web'`, the platform guard the Markdown actions' `BackHandler` registration gained so it
+// stops logging on the page, and `"button"`, the accessibility role the header's Back control
+// gained so the page serves it by name. Neither is a behaviour change on a phone.
 const HEAD_RUNTIME_STRING_SHA256 =
-  'ce4c68956cec3b49aaf785e99bc2d7efd3eafeb4fdac6ce116cd854546c045f4'
-const HEAD_HOST_JSX_SHA256 = '390405926b1695fa3a33686f0bc192b432f5468d8576499d7cafbb4922defbb5'
+  '2e533c7b630364b65281c55a5b62bfb76de156f47b4225052243beedf4d215d9'
+const HEAD_HOST_JSX_SHA256 = '3ba319e8823e304b1024b5f583ddb340ae583010e522e50ac276231d3658180f'
 const HEAD_LEAF_JSX_SHA256 = 'c7e1a4b90197697f1eaa640c38da63281b4f7b84fb036ae2152f00c2f7d7cb77'
 const HEAD_STYLE_REFERENCE_SHA256 =
   '295a3501c2c6d7bea7c8bbf38b3f3534f01344cd7e1b91bb8e07c040821d596a'
@@ -561,7 +566,7 @@ describe('mobile session route extraction parity', () => {
 
   it('preserves runtime strings, styles, and the expanded JSX tree', () => {
     const strings = readRuntimeStrings()
-    expect(strings).toHaveLength(534)
+    expect(strings).toHaveLength(536)
     expect(hash(strings)).toBe(HEAD_RUNTIME_STRING_SHA256)
     const jsx = readJsxFacts(readDefinitions())
     expect(jsx.host).toHaveLength(124)
