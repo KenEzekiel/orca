@@ -520,6 +520,8 @@ for (const engine of ['chromium', 'webkit']) {
         expect(sealed.foreignHits).toEqual([])
         // The control: with no policy the same three subresources are fetched, so the empty list
         // above is the inherited `img-src` and `font-src` and not an artifact that never parsed.
+        // `img-src` admits `https:`, so what refuses `/img.png` is this origin being cleartext
+        // `http:`; a frame's remote image over TLS is allowed, and the fence here is the scheme.
         const control = await open(browser(), { csp: null, signal: ctx.signal })
         expect(control.pixel).toBe(ARTIFACT_RGB)
         expect(control.foreignHits).toEqual(

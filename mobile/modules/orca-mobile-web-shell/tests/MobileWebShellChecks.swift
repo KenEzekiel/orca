@@ -209,9 +209,8 @@ import Foundation
     precondition(directives.contains("script-src 'self'"))
     // React Native Web injects runtime styles with no nonce; see MobileWebShellCsp.
     precondition(directives.contains("style-src 'self' 'unsafe-inline'"))
-    // A file preview is a `data:<mime>;base64,` URI the page composed from a reply it already
-    // holds; see MobileWebShellCsp.
-    precondition(directives.contains("img-src 'self' data:"))
+    // A file preview is a `data:` URI and markdown carries remote images; see MobileWebShellCsp.
+    precondition(directives.contains("img-src 'self' data: https:"))
     precondition(directives.contains("connect-src 'self'"))
     precondition(directives.contains("worker-src 'none'"))
     precondition(directives.contains("frame-src 'none'"))
@@ -224,8 +223,12 @@ import Foundation
     precondition(!header.contains("unsafe-eval"))
     // Narrowed rather than absent: `data:` is a fetch source for images and for nothing else, so a
     // directive that grew one would fail here instead of passing a blanket absence check.
-    precondition(directives.filter { $0.contains("data:") } == ["img-src 'self' data:"])
+    precondition(directives.filter { $0.contains("data:") } == ["img-src 'self' data: https:"])
     precondition(!header.contains("blob:"))
+    // Same shape for `https:`: images and nothing else. `http:` is not a substring of `https:`, so
+    // this still refuses a cleartext source anywhere in the header.
+    precondition(directives.filter { $0.contains("https:") } == ["img-src 'self' data: https:"])
+    precondition(!header.contains("http:"))
     precondition(!header.contains("\r") && !header.contains("\n"))
   }
 
