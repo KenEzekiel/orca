@@ -15,6 +15,13 @@ internal fun mobileWebShellResponseHeaders(path: String, byteCount: Int): Map<St
   )
   if (path == "/") {
     headers["Content-Security-Policy"] = MOBILE_WEB_SHELL_CSP
+    // The document's origin is `orca-mobile-web://<sessionId>/`, so a request that carries a
+    // referrer carries the session id. `img-src https:` made that reachable: an image the artifact
+    // or a markdown document names is a request to someone else's host. The iframe's own
+    // `referrerPolicy` does not cover it -- measured on WebKit, a srcdoc frame's image request
+    // carried the embedder's origin anyway, where Chromium sent none -- so the guarantee belongs on
+    // the document, where one header covers every request the page makes.
+    headers["Referrer-Policy"] = "no-referrer"
   }
   return headers
 }

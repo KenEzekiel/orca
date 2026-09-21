@@ -27,7 +27,11 @@ import { PNG } from 'pngjs'
 import { chromium, webkit } from 'playwright-core'
 import { lucideBarrelPlugin } from './build-mobile-web-app-bundle.mjs'
 import { mobileWebAppDependenciesPresent } from './mobile-web-app-bundle-dependencies.mjs'
-import { createBundleServer, readShellCsp } from './mobile-web-app-render-harness.mjs'
+import {
+  createBundleServer,
+  readShellCsp,
+  readShellDocumentHeaders
+} from './mobile-web-app-render-harness.mjs'
 import { settleAfterMount, waitForLoadedFrame } from './mobile-web-app-preview-frame-settling.mjs'
 
 const mobileDir = fileURLToPath(new URL('../../mobile', import.meta.url))
@@ -116,6 +120,7 @@ let foreign = null
  */
 const SECURE_ORIGIN = 'https://artifact-images.invalid'
 const secureHits = []
+const secureReferers = []
 
 /** A 1x1 PNG, the smallest body that lets an admitted image request finish rather than error. */
 const PNG_1X1 = Buffer.from(
@@ -176,10 +181,19 @@ const browsers = {}
  */
 let sealedServer = null
 let openServer = null
+/**
+ * A third server, serving the shipped policy with a deliberately permissive `Referrer-Policy`.
+ * It is the presence precondition for the referrer reading: Chromium sends no referrer from a
+ * srcdoc frame's image whatever the header says, so without an arm that does send one, "no
+ * `Referer`" there would pass on a rig that dropped the header entirely.
+ */
+let leakyServer = null
 const origins = {}
+let shippedDocumentHeaders = null
 
 beforeAll(async () => {
   shippedCsp = await readShellCsp()
+  shippedDocumentHeaders = await readShellDocumentHeaders()
   if (!bundles) {
     return
   }
@@ -242,12 +256,23 @@ beforeAll(async () => {
       '<div id="root" style="display:flex;flex-direction:column;height:100vh"></div>' +
       '<script src="/html-preview-check.js"></script></body></html>'
   )
-  const sealed = await createBundleServer({ outDir, cspHeader: shippedCsp })
+  const sealed = await createBundleServer({
+    outDir,
+    cspHeader: shippedCsp,
+    documentHeaders: shippedDocumentHeaders
+  })
   sealedServer = sealed.server
   origins.shipped = sealed.origin
   const bare = await createBundleServer({ outDir, cspHeader: null })
   openServer = bare.server
   origins.none = bare.origin
+  const leaky = await createBundleServer({
+    outDir,
+    cspHeader: shippedCsp,
+    documentHeaders: { 'Referrer-Policy': 'unsafe-url' }
+  })
+  leakyServer = leaky.server
+  origins.leaky = leaky.origin
   const executablePath = process.env.ORCA_MOBILE_WEB_RENDER_BROWSER
   browsers.chromium = await chromium.launch({
     headless: true,
@@ -263,6 +288,7 @@ afterAll(async () => {
   await browsers.webkit?.close()
   sealedServer?.close()
   openServer?.close()
+  leakyServer?.close()
   foreign?.close()
   if (scratch) {
     // This run's directory only: `mobile/.tmp` is a shared ignored root and another suite may hold
@@ -290,7 +316,7 @@ async function open(
     signal
   } = {}
 ) {
-  const origin = csp === 'shipped' ? origins.shipped : origins.none
+  const origin = origins[csp === 'shipped' ? 'shipped' : csp === 'leaky' ? 'leaky' : 'none']
   nonceCounter += 1
   const nonce = `n${String(nonceCounter)}`
   // Read here and carried as a string: asked for at the abort it lost its race with teardown and
@@ -327,8 +353,12 @@ async function open(
   // Answered here rather than by a server, and recorded on the way through. A request only reaches
   // this handler if the policy let it out, which is the whole reading: the font never arrives.
   await page.route(`${SECURE_ORIGIN}/**`, (route) => {
-    const url = route.request().url()
+    const request = route.request()
+    const url = request.url()
     secureHits.push(url)
+    // The header as the browser would have put it on the wire. Recorded for every admitted request
+    // and read per arm, because what carries a referrer is the request and not the page.
+    secureReferers.push({ url, referer: request.headers().referer ?? null })
     if (url.includes('.png')) {
       return void route.fulfill({ status: 200, contentType: 'image/png', body: PNG_1X1 })
     }
@@ -453,6 +483,10 @@ async function open(
     secureHits: secureHits
       .filter((one) => one.includes(`n=${nonce}`))
       .map((one) => one.split('?')[0].slice(SECURE_ORIGIN.length)),
+    // What each admitted request carried, this arm's only, so an absence is this artifact's.
+    secureReferers: secureReferers
+      .filter((one) => one.url.includes(`n=${nonce}`))
+      .map((one) => one.referer),
     violations: await page.evaluate(() => window.__violations),
     body: await page.evaluate(() => document.body.innerText)
   }
@@ -574,6 +608,34 @@ for (const engine of ['chromium', 'webkit']) {
         // reached `img-src` and nothing else, so the font is refused where the images are not.
         expect(read.secureHits).not.toContain('/probe.woff2')
       }, 120_000)
+
+      it('sends no referrer with an admitted https image, which is the shell header doing it', async (ctx) => {
+        const sealed = await open(browser(), { assets: SECURE_ORIGIN, signal: ctx.signal })
+        // The presence precondition for the absence below: two requests were admitted and read, so
+        // an empty referrer list is what they carried rather than a list of nothing.
+        expect(sealed.secureHits.length).toBe(2)
+        expect(sealed.secureReferers).toEqual([null, null])
+
+        // Why the shell sends the header at all. Serve the same policy with a permissive
+        // `Referrer-Policy` and WebKit puts the embedder's URL on the image request, despite
+        // `referrerPolicy="no-referrer"` on the iframe element; on the phone that URL is
+        // `orca-mobile-web://<sessionId>/`, so the session id would reach the image host. Chromium
+        // sends none either way, which is worth pinning too: on that engine the reading above is
+        // the browser's own behaviour and not evidence the header arrived.
+        const leaky = await open(browser(), {
+          assets: SECURE_ORIGIN,
+          csp: 'leaky',
+          signal: ctx.signal
+        })
+        expect(leaky.secureHits.length).toBe(2)
+        const leaked = leaky.secureReferers.filter((one) => one !== null)
+        if (engine === 'webkit') {
+          expect(leaked.length).toBe(2)
+          expect(leaked.every((one) => one.startsWith(origins.leaky))).toBe(true)
+        } else {
+          expect(leaked).toEqual([])
+        }
+      }, 180_000)
 
       it('asks to navigate the top frame to the shell itself, which the shell must refuse', async (ctx) => {
         // `href="/"` resolves against the embedder's base, so this is a request to load the shell's

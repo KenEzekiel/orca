@@ -323,6 +323,9 @@ import Foundation
     precondition(document["Content-Length"] == "12")
     precondition(document["Cache-Control"] == "no-store")
     precondition(document["X-Content-Type-Options"] == "nosniff")
+    // The document origin is the session id, and `img-src https:` gives the page somewhere to send
+    // it. See MobileWebShellResponseHeaders.
+    precondition(document["Referrer-Policy"] == "no-referrer")
 
     // The policy rides the document alone; on a subresource response it is inert.
     for path in ["/index.html", "/assets/aa.js", "/manifest.json", "/assets/bb.png"] {
@@ -332,6 +335,9 @@ import Foundation
         byteCount: 0
       )
       precondition(headers["Content-Security-Policy"] == nil)
+      // Rides the document with the policy: the referrer of a request is decided by the document
+      // that made it, so on a subresource response this would govern nothing.
+      precondition(headers["Referrer-Policy"] == nil)
       precondition(headers["Cache-Control"] == "no-store")
       precondition(headers["X-Content-Type-Options"] == "nosniff")
     }
