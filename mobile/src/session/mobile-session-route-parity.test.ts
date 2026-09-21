@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { MOBILE_SESSION_ROUTE_SOURCE_FILES } from './mobile-session-route-source-family.test-support'
 
 const SESSION_FILES = MOBILE_SESSION_ROUTE_SOURCE_FILES
+/** The function the route mounts, which C7.7 moved out of the route file and into a component. */
+const ROOT_COMPONENT = 'MobileSessionRouteScreen'
 const LOGIC_EXPANSION_NAMES = new Set([
   'useMobileSessionController',
   'useMobileSessionFoundation',
@@ -65,8 +67,8 @@ const HOST_COMPONENT_NAMES = new Set([
 // Refreshed by C7.2: five clipboard hooks joined the expanded route, which is the whole of the +5 —
 // a writer in the diff-note, Markdown and selection actions, a reader in the selection actions and
 // the attachment probe. The screen's other four clipboard sites (the terminal's paste, the sheets,
-// the quick-command row, the diff-review send) sit outside the walk from `SessionScreen` and so do
-// not move this pin. The copy-path sheet also gained the failure toast the other two copies had.
+// the quick-command row, the diff-review send) sit outside the walk from `MobileSessionRouteScreen`
+// and so do not move this pin. The copy-path sheet also gained the failure toast the other two had.
 const HEAD_MAIN_HOOK_SHA256 = '6d309ebdf13ecf21e4b42fb29de9db586a3c9835ead43015a5261b67bf18b8f6'
 const HEAD_HOOK_BINDING_SHA256 = '9041e8a74efdacc6099933bac11fb624aff46c99648746cf5504bf320ec431c5'
 const HEAD_CALLBACK_IDENTITY_SHA256 =
@@ -281,7 +283,7 @@ function readNestedFunctions(definitions: ReadonlyMap<string, Definition>): stri
     }
     visit(definition.declaration.body)
   }
-  visitDefinition('SessionScreen', new Set())
+  visitDefinition(ROOT_COMPONENT, new Set())
   return functions
 }
 
@@ -324,7 +326,7 @@ function readNativeAndTimerFacts(definitions: ReadonlyMap<string, Definition>): 
     }
   }
   visitLogicalFunction('FileReader', definitions, collect)
-  visitLogicalFunction('SessionScreen', definitions, collect)
+  visitLogicalFunction(ROOT_COMPONENT, definitions, collect)
   return { cleanups, creations, registrations, removals }
 }
 
@@ -441,7 +443,7 @@ function readJsxFacts(definitions: ReadonlyMap<string, Definition>): {
   for (const name of CONTENT_COMPONENT_NAMES) {
     visitDefinition(name)
   }
-  visitDefinition('SessionScreen')
+  visitDefinition(ROOT_COMPONENT)
   const styleReferences: string[] = []
   for (const record of [...host, ...leaf]) {
     for (const match of record.matchAll(/styles\.([A-Za-z0-9_]+)/g)) {
@@ -459,7 +461,7 @@ function readCompatibilityFacts(definitions: ReadonlyMap<string, Definition>): {
   const capabilities: string[] = []
   const identityFields: string[] = []
   const navigation: string[] = []
-  visitLogicalFunction('SessionScreen', definitions, (node, sourceFile) => {
+  visitLogicalFunction(ROOT_COMPONENT, definitions, (node, sourceFile) => {
     if (!isRuntimeNode(node)) {
       return
     }
@@ -510,7 +512,7 @@ function readCompatibilityFacts(definitions: ReadonlyMap<string, Definition>): {
 describe('mobile session route extraction parity', () => {
   it('preserves hooks, callbacks, effects, and nested action bodies', () => {
     const definitions = readDefinitions()
-    const main = readHookFacts('SessionScreen', definitions)
+    const main = readHookFacts(ROOT_COMPONENT, definitions)
     const contentBindings = CONTENT_COMPONENT_NAMES.flatMap(
       (name) => readHookFacts(name, definitions).bindings
     )
