@@ -60,13 +60,13 @@ export function useMobileSessionDiffComments(scope: MobileSessionDocumentReaders
   )
 
   useEffect(() => {
-    // Caught here rather than inside the loader, whose promise the golden recorder awaits. A
-    // refused read already returns above; a *rejected* one is the transport's, and the loader had
-    // no catch at all — inside the page that is an unhandled rejection on every mount against a
-    // host that will not answer `worktree.show`, measured in the render check. Notes that did not
-    // arrive leave the ones on screen as they were, which is this module's own policy for a
-    // refusal.
-    void loadDiffComments().catch(() => undefined)
+    // No catch, deliberately, and it is a recorded defect rather than an oversight: a *refused*
+    // `worktree.show` returns above, and a *rejected* one is an unhandled rejection on every mount
+    // — visible in the page as a document-level error, measured by
+    // `config/scripts/mobile-web-app-session-render.test.mjs`. Adding `.catch` here is the fix and
+    // it moves a golden: `matrix-session.diff-notes-worktree.show-1` certifies the rejection as an
+    // effect of the loaded checkpoint, so the change is a re-record and a review event, not a line.
+    void loadDiffComments()
   }, [loadDiffComments])
 
   const addDiffCommentForFile = useCallback(
