@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { z } from 'zod'
+import { noteMirroredWrite } from '../storage/mirrored-storage-keys'
 import type { AgentJournalSubmission } from '../../../src/shared/agent-session-journal-types'
 import {
   AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS,
@@ -87,10 +88,15 @@ function parseJournal(raw: string | null): OperationJournal {
 
 async function writeEntries(entries: OperationEntry[]): Promise<void> {
   if (entries.length === 0) {
+    // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
+    // built synchronously, so a write that only reached the store would be one `init` behind.
+    noteMirroredWrite(STORAGE_KEY, null)
     await AsyncStorage.removeItem(STORAGE_KEY)
     return
   }
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, entries }))
+  const value = JSON.stringify({ v: 1, entries })
+  noteMirroredWrite(STORAGE_KEY, value)
+  await AsyncStorage.setItem(STORAGE_KEY, value)
 }
 
 async function serialize<T>(action: () => Promise<T>): Promise<T> {

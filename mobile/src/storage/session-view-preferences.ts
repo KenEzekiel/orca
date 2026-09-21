@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { noteMirroredWrite } from './mirrored-storage-keys'
 
 /** How a supported agent session opens: the raw terminal or the native chat view. */
 export type MobileSessionView = 'terminal' | 'chat'
@@ -51,9 +52,12 @@ export async function loadDefaultSessionView(): Promise<MobileSessionView> {
 export function saveDefaultSessionView(view: MobileSessionView): Promise<void> {
   // Why: callers can outlive their route; a shared barrier keeps remounted
   // Settings screens from letting an older write land after a newer choice.
-  const write = (defaultViewWriteBarrier ?? Promise.resolve()).then(() =>
-    AsyncStorage.setItem(DEFAULT_SESSION_VIEW_KEY, view)
-  )
+  const write = (defaultViewWriteBarrier ?? Promise.resolve()).then(() => {
+    // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
+    // built synchronously, so a write that only reached the store would be one `init` behind.
+    noteMirroredWrite(DEFAULT_SESSION_VIEW_KEY, view)
+    return AsyncStorage.setItem(DEFAULT_SESSION_VIEW_KEY, view)
+  })
   const barrier = write.catch(() => undefined)
   defaultViewWriteBarrier = barrier
   void barrier.then(() => clearDefaultViewWriteBarrier(barrier))
@@ -142,7 +146,9 @@ export async function updateSessionViewOverride(
       throw new Error('Session view overrides could not be read')
     }
     current.overrides.set(tabId, view)
-    await AsyncStorage.setItem(key, JSON.stringify(Object.fromEntries(current.overrides)))
+    const value = JSON.stringify(Object.fromEntries(current.overrides))
+    noteMirroredWrite(key, value)
+    await AsyncStorage.setItem(key, value)
   })
   const barrier = update.catch(() => undefined)
   overrideUpdateBarriers.set(key, barrier)

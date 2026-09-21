@@ -1,4 +1,4 @@
-import { isPageStorageKeyForHost, PAGE_STORAGE_MAX_VALUE_CHARS } from '../page-storage-keys'
+import { isPageStorageKeyForRoute, PAGE_STORAGE_MAX_VALUE_CHARS } from '../page-storage-keys'
 
 /**
  * The page's AsyncStorage: the app's store, read from `init` and written over the `storage` grant.
@@ -15,16 +15,50 @@ import { isPageStorageKeyForHost, PAGE_STORAGE_MAX_VALUE_CHARS } from '../page-s
  */
 type PageStorageWriter = (key: string, value: string | null) => boolean
 
+/** Why a write went nowhere, in the page's own words rather than a boolean. */
+type PageStorageRefusal = 'not-allowed' | 'too-large' | 'not-delivered'
+
+const REFUSAL_SENTENCES: Record<PageStorageRefusal, string> = {
+  'not-allowed': 'this screen was not given that setting to write',
+  'too-large': `a stored value may be at most ${String(PAGE_STORAGE_MAX_VALUE_CHARS)} characters`,
+  'not-delivered': 'the app did not take the write'
+}
+
+/**
+ * A write the page could not make, as something a screen can put on itself.
+ *
+ * The real AsyncStorage rejects when its store refuses — a value over the row limit is a SQLite
+ * error on Android — so rejecting is the module's own contract rather than a shape invented here,
+ * and every caller that already catches a save gets the refusal for free. The one that matters is
+ * the durable send journal: `mobile-structured-agent-session-send.ts` catches it and answers
+ * "Message not sent" instead of sending a mutation whose operation id was never written down
+ * (rulings-ota-c7.md ruling 7).
+ */
+export class PageStorageRefusedError extends Error {
+  readonly refusal: PageStorageRefusal
+  readonly key: string
+
+  constructor(key: string, refusal: PageStorageRefusal) {
+    super(`Orca could not save ${key}: ${REFUSAL_SENTENCES[refusal]}.`)
+    this.name = 'PageStorageRefusedError'
+    this.refusal = refusal
+    this.key = key
+  }
+}
+
 const values = new Map<string, string>()
 let write: PageStorageWriter = () => false
 /** The host this document was opened for; no key belonging to another one is writable. */
 let hostId = ''
+/** And the route, because two of the keys are scoped to the workspace the route names. */
+let routePathname = ''
 
 /** Called once by the entry, before anything renders, with what `init` carried. */
 export function publishPageStorage(
   entries: Readonly<Record<string, string>>,
   writer: PageStorageWriter,
-  forHostId: string
+  forHostId: string,
+  forRoutePathname: string
 ): void {
   values.clear()
   for (const [key, value] of Object.entries(entries)) {
@@ -32,58 +66,74 @@ export function publishPageStorage(
   }
   write = writer
   hostId = forHostId
+  routePathname = forRoutePathname
 }
 
 /**
- * Refused rather than kept locally.
+ * Refused rather than kept locally, and named rather than dropped.
  *
  * A key outside the allowlist is one the shell will not write, so holding it here would answer a
  * later read with a value no other screen in the app can see — a pin that looks set and is not,
  * which is exactly the failure the grant exists to avoid.
  */
-function accept(key: string, value: string | null): boolean {
-  if (!isPageStorageKeyForHost(key, hostId)) {
-    return false
+function accept(key: string, value: string | null): PageStorageRefusal | null {
+  if (!isPageStorageKeyForRoute(key, hostId, routePathname)) {
+    return 'not-allowed'
   }
   // The envelope's own bound, imported rather than restated: without it an oversized value is
   // cached here and dropped on the wire, so the page reads back a write no other screen can see.
   if (value !== null && value.length > PAGE_STORAGE_MAX_VALUE_CHARS) {
-    return false
+    return 'too-large'
   }
   if (!write(key, value)) {
-    return false
+    return 'not-delivered'
   }
   if (value === null) {
     values.delete(key)
   } else {
     values.set(key, value)
   }
-  return true
+  return null
+}
+
+/** One refusal, as the rejection the caller's own catch is written for. */
+function settle(key: string, refusal: PageStorageRefusal | null): Promise<void> {
+  return refusal === null
+    ? Promise.resolve()
+    : Promise.reject(new PageStorageRefusedError(key, refusal))
+}
+
+/** The first refusal of a batch, after every pair that could be applied has been. */
+function settleBatch(refusals: { key: string; refusal: PageStorageRefusal }[]): Promise<void> {
+  const first = refusals[0]
+  return first === undefined ? Promise.resolve() : settle(first.key, first.refusal)
 }
 
 const pageAsyncStorage = {
   getItem: (key: string): Promise<string | null> => Promise.resolve(values.get(key) ?? null),
-  setItem: (key: string, value: string): Promise<void> => {
-    accept(key, value)
-    return Promise.resolve()
-  },
-  removeItem: (key: string): Promise<void> => {
-    accept(key, null)
-    return Promise.resolve()
-  },
+  setItem: (key: string, value: string): Promise<void> => settle(key, accept(key, value)),
+  removeItem: (key: string): Promise<void> => settle(key, accept(key, null)),
   multiGet: (keys: readonly string[]): Promise<[string, string | null][]> =>
     Promise.resolve(keys.map((key) => [key, values.get(key) ?? null])),
   multiSet: (pairs: readonly [string, string][]): Promise<void> => {
+    const refusals = []
     for (const [key, value] of pairs) {
-      accept(key, value)
+      const refusal = accept(key, value)
+      if (refusal !== null) {
+        refusals.push({ key, refusal })
+      }
     }
-    return Promise.resolve()
+    return settleBatch(refusals)
   },
   multiRemove: (keys: readonly string[]): Promise<void> => {
+    const refusals = []
     for (const key of keys) {
-      accept(key, null)
+      const refusal = accept(key, null)
+      if (refusal !== null) {
+        refusals.push({ key, refusal })
+      }
     }
-    return Promise.resolve()
+    return settleBatch(refusals)
   },
   getAllKeys: (): Promise<string[]> => Promise.resolve([...values.keys()]),
   // The app's store is not this document's to empty, and no screen in the page closure calls it.

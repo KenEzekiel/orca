@@ -6,7 +6,11 @@ import {
   readMirroredStorage,
   writeMirroredStorage
 } from '../storage/mirrored-storage-keys'
-import { isPageStorageKeyForHost, pageStorageKeysForHost } from './page-storage-keys'
+import {
+  isPageStorageKeyForRoute,
+  pageStorageEntriesForInit,
+  pageStorageKeysForRoute
+} from './page-storage-keys'
 
 export type PageHostSnapshot = {
   host: BridgeInitHost
@@ -42,15 +46,15 @@ export type PageHostSnapshotView = {
  * keys are re-seated per `init` answer, because the store is their truth; between those reads the
  * map is kept current by every writer of one, which is what lets `init` stay synchronous.
  */
-export function usePageHostSnapshot(hostId: string): PageHostSnapshotView {
+export function usePageHostSnapshot(hostId: string, routePathname: string): PageHostSnapshotView {
   const [snapshot, setSnapshot] = useState<PageHostSnapshot | null>(null)
   const [unreadable, setUnreadable] = useState(false)
 
   // The allowlist is the shell's, not the mirror's: what the page may be handed is named here on
   // every read and every seat, so nothing else the app happens to mirror can reach it.
   const refreshStorage = useCallback(
-    (): Promise<void> => hydrateMirroredStorage(pageStorageKeysForHost(hostId)),
-    [hostId]
+    (): Promise<void> => hydrateMirroredStorage(pageStorageKeysForRoute(hostId, routePathname)),
+    [hostId, routePathname]
   )
 
   useEffect(() => {
@@ -98,18 +102,30 @@ export function usePageHostSnapshot(hostId: string): PageHostSnapshotView {
     (key: string, value: string | null): void => {
       // The host refuses a key outside this list before this ever runs. Held to it here too, so the
       // map cannot hold something the next refresh would drop and answer a read with it meanwhile.
-      if (!isPageStorageKeyForHost(key, hostId)) {
+      if (!isPageStorageKeyForRoute(key, hostId, routePathname)) {
         return
       }
       writeMirroredStorage(key, value)
     },
-    [hostId]
+    [hostId, routePathname]
   )
 
   return {
     snapshot,
     unreadable,
-    readStorage: useCallback(() => readMirroredStorage(pageStorageKeysForHost(hostId)), [hostId]),
+    readStorage: useCallback(() => {
+      // Bounded here rather than at the mirror, which holds no policy about the keys it is asked
+      // for: a value over the cap would otherwise reach `init`, where the page's own schema
+      // refuses the whole frame and the screen never opens. The name of what was left out is
+      // reported rather than swallowed, because a preference falling back to its default is a
+      // degradation someone has to be able to read.
+      const held = readMirroredStorage(pageStorageKeysForRoute(hostId, routePathname))
+      const { entries, dropped } = pageStorageEntriesForInit(held)
+      if (dropped.length > 0) {
+        console.warn('[web-shell] a stored value is too large for the page', { keys: dropped })
+      }
+      return entries
+    }, [hostId, routePathname]),
     refreshStorage,
     writeStorage
   }

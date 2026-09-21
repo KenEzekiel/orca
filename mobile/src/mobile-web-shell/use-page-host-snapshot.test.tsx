@@ -51,15 +51,20 @@ vi.mock('../transport/host-store', () => ({
 
 import { savePinnedIds } from '../storage/preferences'
 import { writeLastVisitedWorktree } from '../worktree/last-visited-worktree-repo'
+import { PAGE_STORAGE_MAX_VALUE_CHARS } from './page-storage-keys'
 import { usePageHostSnapshot, type PageHostSnapshotView } from './use-page-host-snapshot'
 
 const PINS = 'orca:pins:host-1'
 const LAST_VISITED = 'orca:last-visited-worktree'
+const CHAT_TABS = 'orca:nativeChatTabs:host-1:wt-1'
+const JOURNAL = 'orca:mobileStructuredSendOperations:v1'
+/** The route every case below mounts for: the one page route with workspace-scoped keys. */
+const SESSION_ROUTE = '/h/host-1/session/wt-1'
 
-async function mount(): Promise<{ view: () => PageHostSnapshotView }> {
+async function mount(routePathname = SESSION_ROUTE): Promise<{ view: () => PageHostSnapshotView }> {
   const held: { view: PageHostSnapshotView | null } = { view: null }
   function Probe(): null {
-    held.view = usePageHostSnapshot('host-1')
+    held.view = usePageHostSnapshot('host-1', routePathname)
     return null
   }
   await act(async () => {
@@ -164,6 +169,59 @@ describe('what the shell puts on every init', () => {
       mounted.view().writeStorage('orca:pins:host-2', '["theirs"]')
     })
     expect(mounted.view().readStorage()).toEqual({ [PINS]: '["mine"]' })
+  })
+
+  it("carries the session route's own workspace, and never the workspace beside it", async () => {
+    doubles.store.set(CHAT_TABS, '{"tab-1":"chat"}')
+    doubles.store.set('orca:nativeChatTabs:host-1:wt-2', '{"tab-9":"chat"}')
+    const mounted = await mount()
+    await act(async () => {
+      mounted.view().refreshStorage()
+    })
+    expect(mounted.view().readStorage()).toEqual({ [CHAT_TABS]: '{"tab-1":"chat"}' })
+    await act(async () => {
+      mounted.view().writeStorage('orca:nativeChatTabs:host-1:wt-2', '{}')
+    })
+    expect(mounted.view().readStorage()).toEqual({ [CHAT_TABS]: '{"tab-1":"chat"}' })
+  })
+
+  it('hands a route that names no workspace neither of the two, so the line above is the route', async () => {
+    doubles.store.set(CHAT_TABS, '{"tab-1":"chat"}')
+    const mounted = await mount('/h/host-1')
+    await act(async () => {
+      mounted.view().refreshStorage()
+    })
+    expect(mounted.view().readStorage()).toEqual({})
+  })
+
+  it('leaves out a value the page would refuse the whole frame over, and says which', async () => {
+    // The send journal is the real one: 48 unsettled sends put it past the cap, and `init` is
+    // refined on that bound — so handing it over takes the session screen down rather than one key.
+    const warned: unknown[][] = []
+    const warn = console.warn
+    console.warn = (...args: unknown[]) => warned.push(args)
+    try {
+      doubles.store.set(PINS, '["one"]')
+      doubles.store.set(JOURNAL, 'x'.repeat(PAGE_STORAGE_MAX_VALUE_CHARS + 1))
+      const mounted = await mount()
+      await act(async () => {
+        mounted.view().refreshStorage()
+      })
+      expect(mounted.view().readStorage()).toEqual({ [PINS]: '["one"]' })
+    } finally {
+      console.warn = warn
+    }
+    expect(JSON.stringify(warned)).toContain(JOURNAL)
+  })
+
+  it('carries the same journal at exactly the bound, so the drop above discriminates', async () => {
+    const atBound = 'x'.repeat(PAGE_STORAGE_MAX_VALUE_CHARS)
+    doubles.store.set(JOURNAL, atBound)
+    const mounted = await mount()
+    await act(async () => {
+      mounted.view().refreshStorage()
+    })
+    expect(mounted.view().readStorage()).toEqual({ [JOURNAL]: atBound })
   })
 })
 

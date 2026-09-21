@@ -22,7 +22,7 @@ import { createBridgeInitFrame } from './bridge/bridge-init-frame'
 import { BRIDGE_HAPTICS_NOTIFY } from './bridge/bridge-haptics-notify'
 import { bridgeNotifyRefusal } from './bridge/bridge-notify-grants'
 import { splitBridgeReply } from './bridge/bridge-reply-chunking'
-import { isPageStorageKeyForHost } from './page-storage-keys'
+import { isPageStorageKeyForRoute } from './page-storage-keys'
 import type { BridgeHostOptions } from './bridge-host-contract'
 
 // Re-exported so a caller reaches the host and what it reports through one module.
@@ -263,7 +263,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         // Also local, and held to this host's own keys. The envelope allowlists the shape before
         // this runs, which lets `orca:pins:<any host>` through: a page opened for one host must
         // not rewrite another's pinned list, and the keys it was handed are the ones it may write.
-        if (!isPageStorageKeyForHost(message.key, host.id)) {
+        if (route === null || !isPageStorageKeyForRoute(message.key, host.id, route.pathname)) {
           options.onDiagnostic?.({ kind: 'storage-refused', key: message.key })
           return
         }
