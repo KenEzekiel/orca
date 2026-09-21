@@ -122,9 +122,12 @@ export const MOBILE_WEB_PAGE_ROUTES = [
   // asks the shell through the grants `init` carried. Without it the pane subscribes without
   // `wantsBinary` against a shell that would have encoded the frames.
   //
-  // Dictation is not here. The vendored `ExpoTwoWayAudioModule.web.ts` answers permission denied,
-  // so the page degrades to the error the screen already has (ruling 4); the verbs that would
-  // replace it are C7.10's PR D and are not on main at this commit.
+  // The four audio verbs are dictation's, and they are this route's alone: C7.10 PR D put the
+  // capture seam on the page and `mobile-web-app-session-dictation-capture.test.mjs` derives the
+  // list from the closure, which reaches `dictation-capture.web.ts` from the composer. All four or
+  // none — a route granted three records with the screen free to lock, and a lock mid-processing
+  // suspends the app and loses the transcript. Ruling 4's degradation is retired with them: the
+  // page no longer falls back to the vendored module's denied microphone.
   {
     pathname: '/h/[hostId]/session/[worktreeId]',
     grants: [
@@ -137,7 +140,11 @@ export const MOBILE_WEB_PAGE_ROUTES = [
       'native.clipboard.read',
       'native.media.pick',
       'native.media.read',
-      'native.media.release'
+      'native.media.release',
+      'native.audio.start',
+      'native.audio.read',
+      'native.audio.stop',
+      'native.wakelock.set'
     ]
   }
 ]

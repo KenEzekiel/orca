@@ -165,14 +165,35 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * part of it is accounted for: the document's own modules replacing the factory that carried them,
  * mermaid's three, and the three bridge modules #21908 and C2.9 pin on main.
  *
- * C7.7 moves it by one, measured at both ends on this tree rather than summed: 4,328 at
- * origin/main `23207bfde2` and 4,329 here, with local modules 978 -> 979. The +1 is the route body
- * becoming a component — the walk now enters through `app/h/[hostId]/session/[worktreeId].web.tsx`
- * instead of the native file and reaches `src/session/MobileSessionRouteScreen.tsx` under it, so
- * the route file is one input either way and the component is the one that is new. Both are read
- * out of the list below by name rather than inferred from the total.
+ * Then C7.10 item D put dictation's capture on the page, and the list moved down rather than up.
+ *
+ *   modules        4328 -> 4323   (-5)
+ *   local modules   978 ->  981   (+3)
+ *
+ * Three local modules join — `src/platform/dictation-capture.web.ts`, its contract
+ * `src/platform/dictation-capture-contract.ts`, and the verb shapes in
+ * `src/mobile-web-shell/bridge/bridge-audio-verbs.ts` — and eight vendored ones leave, because the
+ * capture seam is what stops the page importing a microphone it does not have. Five are
+ * `@orca/expo-two-way-audio` (its web module, `core`, `events`, `hooks` and the index) and three
+ * are `expo-keep-awake`; the page asks the shell for both over `native.audio.start|read|stop` and
+ * `native.wakelock.set` instead. The native halves of the seam resolve out of this closure
+ * entirely, which is the -8 + 3.
+ *
+ * Measured, not derived: `mobile-web-app-session-dictation-capture.test.mjs` moves the web file
+ * aside and walks the closure again, which puts those eight back.
+ *
+ * C7.7 registers the route and adds one more: the walk now enters through
+ * `app/h/[hostId]/session/[worktreeId].web.tsx` rather than the native switch, and reaches
+ * `src/session/MobileSessionRouteScreen.tsx` under it — the route file is one input either way and
+ * the component is the one that is new.
+ *
+ * The number below is re-measured on the merge rather than summed, which is what the reading above
+ * kept having to do: C7.7 measured 4,328 -> 4,329 against `23207bfde2` and item D measured
+ * 4,328 -> 4,323 against a different base, and neither side's arithmetic survives the other. The
+ * merge reads 4,324 modules and 982 local — one more than the 4,323 / 981 item D pinned, and that
+ * one is C7.7's route body, read out of `ROUTE_ENTRY` below by name rather than inferred.
  */
-const SESSION_ROUTE_MODULES = 4329
+const SESSION_ROUTE_MODULES = 4324
 
 /** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
 const ROUTE_ENTRY = [
