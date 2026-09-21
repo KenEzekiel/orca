@@ -38,14 +38,18 @@ export const MOBILE_HTML_PREVIEW_SANDBOX = 'allow-top-navigation-by-user-activat
  * its images, `font-src 'none'` refuses a web font, `connect-src 'self'` its XHR, and
  * `script-src 'self'` refuses its inline script even if the sandbox had allowed scripts.
  *
- * Only the script half of that is stricter than native. Since `img-src` gained `https:` the frame
- * loads a remote image exactly as the native preview does, and an image URL is a channel: it fires
- * on view and carries whatever the artifact's author encoded in it, so a rendered artifact can tell
- * its own author it was opened. Nothing dynamic goes with it -- no script runs, so the URL is fixed
- * when the artifact is written. What keeps the document's own origin, which is the session id, off
- * that request is the shell's `Referrer-Policy: no-referrer` header and not `referrerPolicy` below:
- * measured in the render rig, WebKit sends the embedder's URL from a srcdoc frame's image despite
- * the attribute, where Chromium sends none.
+ * Images are the one of those four that is no longer stricter than native. `script-src 'self'`,
+ * `font-src 'none'` and `connect-src 'self'` still are -- the native preview is a separate WebView
+ * process with no policy on its document, so it runs a script, loads a web font and reaches any
+ * host -- but since `img-src` gained `https:` this frame loads a remote image exactly as native
+ * does.
+ *
+ * That image URL is a channel: it fires on view and carries whatever the artifact's author encoded
+ * in it, so a rendered artifact can tell its own author it was opened. Nothing dynamic goes with it
+ * -- no script runs, so the URL is fixed when the artifact is written. What keeps the document's
+ * own origin off that request is the shell's `Referrer-Policy: no-referrer` header and not
+ * `referrerPolicy` below: measured in the render rig, WebKit sends the embedder's URL from a srcdoc
+ * frame's image despite the attribute, where Chromium sends none.
  */
 export function MobileHtmlPreview({ html, renderSource }: MobileHtmlPreviewProps) {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')

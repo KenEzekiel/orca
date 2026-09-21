@@ -16,12 +16,14 @@ internal val MOBILE_WEB_SHELL_CSP = listOf(
   // page composes `data:<mime>;base64,<content>` for React Native Web's Image. `https:` for the
   // remote images the page already tries to render and cannot: an agent's favicon, which is a fixed
   // `google.com/s2/favicons` URL; a project's icon, which is a favicon, an avatar or an upload the
-  // host names; a review comment's author avatar; and whatever an artifact names inside the sealed
-  // HTML preview frame, which inherits this policy because a `srcdoc` frame has no URL of its own.
+  // host names; and whatever an artifact names inside the sealed HTML preview frame, which inherits
+  // this policy because a `srcdoc` frame has no URL of its own.
   //
-  // Not markdown and not the rich editor, whatever a later reader assumes from ruling 26: markdown
-  // paints `![](...)` as a tappable link and the editor is still a plain source field. They are the
-  // anticipated surfaces, and C7.10 is where they become real ones.
+  // Not markdown, not the rich editor and not a review comment's avatar, whatever a later reader
+  // assumes from ruling 26: markdown paints `![](...)` as a tappable link, the editor is still a
+  // plain source field, and the avatar is skipped under `Platform.OS !== 'web'` by a card that pins
+  // the skip in a test. All three are anticipated surfaces, and C7.10 is where they become real
+  // ones.
   //
   // The bound is the destination, not the provenance. CSP matches both as schemes, so this admits
   // any image URL of either and cannot tell one the page composed from one it was handed; for
