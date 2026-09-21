@@ -41,6 +41,8 @@ export function PRFilesCombinedDiffViewer({
   headSha,
   baseSha,
   pendingViewedPaths,
+  pendingJumpPath,
+  onJumpHandled,
   onCommentAdded,
   onViewedChange
 }: PRFilesCombinedDiffViewerProps): React.JSX.Element {
@@ -187,6 +189,23 @@ export function PRFilesCombinedDiffViewer({
 
   const allSectionsCollapsed = sections.length > 0 && sections.every((section) => section.collapsed)
   const sectionIndexByKey = useCombinedDiffSectionIndexMap({ entrySignature, sections })
+
+  // Jump to a file section when pendingJumpPath is set (triggered from Conversation tab).
+  useEffect(() => {
+    if (!pendingJumpPath) return
+    const key = getPRFileSectionKey(pendingJumpPath)
+    const index = sectionIndexByKey.get(key)
+    if (index == null) {
+      onJumpHandled?.()
+      return
+    }
+    const section = sectionsRef.current[index]
+    if (section?.collapsed) {
+      toggleSection(index)
+    }
+    virtualizer.scrollToIndex(index, { align: 'start' })
+    onJumpHandled?.()
+  }, [pendingJumpPath, sectionIndexByKey, sectionsRef, toggleSection, virtualizer, onJumpHandled])
   const visibleActiveTreeSectionKey =
     activeTreeSectionKey && sectionIndexByKey.has(activeTreeSectionKey)
       ? activeTreeSectionKey
